@@ -3,30 +3,67 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>iPad Craft - World Generation</title>
+    <title>iPad Craft - Textures & Modes</title>
     <style>
         html, body {
             margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%;
             position: fixed; touch-action: none; user-select: none; -webkit-user-select: none;
+            font-family: sans-serif;
         }
         canvas { display: block; }
 
-        /* 十字キー */
-        #dpad {
-            position: absolute; bottom: 30px; left: 30px;
-            width: 130px; height: 130px; z-index: 10;
+        /* =========================================
+           タイトル画面
+        ========================================= */
+        #title-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.6); display: flex; flex-direction: column; 
+            justify-content: center; align-items: center; z-index: 100;
         }
-        .pad-btn {
-            position: absolute; width: 42px; height: 42px;
-            background: rgba(255, 255, 255, 0.6); border: 2px solid #fff;
-            border-radius: 8px; font-size: 12px; font-weight: bold; color: #333; outline: none;
+        .game-title {
+            color: #fff; font-size: 48px; font-weight: bold; margin-bottom: 40px;
+            text-shadow: 4px 4px 0 #000; letter-spacing: 2px;
         }
-        #btn-forward  { top: 0; left: 44px; }
-        #btn-left     { top: 44px; left: 0; }
-        #btn-right    { top: 44px; right: 0; }
-        #btn-backward { bottom: 0; left: 44px; }
+        .mode-desc { color: #ddd; font-size: 14px; margin-bottom: 30px; text-align: center; }
+        .menu-btn {
+            width: 280px; padding: 15px; margin-bottom: 15px;
+            background: #555; border: 3px solid #000; border-top-color: #aaa; border-left-color: #aaa;
+            color: #fff; font-size: 18px; font-weight: bold; text-align: center;
+            outline: none; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .menu-btn:active {
+            background: #444; border-bottom-color: #aaa; border-right-color: #aaa; border-top-color: #000; border-left-color: #000;
+        }
 
-        /* ツールバー（ブロックの種類が増えたので横スクロール対応に） */
+        /* =========================================
+           ゲームプレイUI
+        ========================================= */
+        #game-ui { display: none; }
+
+        /* 左下：前後左右 */
+        #dpad {
+            position: absolute; bottom: 30px; left: 30px; width: 130px; height: 130px; z-index: 10;
+        }
+        /* 右下：上昇下降（クリエイティブ用） */
+        #updown-pad {
+            position: absolute; bottom: 30px; right: 30px; width: 50px; height: 100px; z-index: 10;
+            display: none; /* 初期状態は非表示 */
+        }
+        
+        .pad-btn {
+            position: absolute; width: 45px; height: 45px;
+            background: rgba(255, 255, 255, 0.7); border: 2px solid #333;
+            border-radius: 8px; font-size: 14px; font-weight: bold; color: #000; outline: none;
+        }
+        #btn-forward  { top: 0; left: 42px; }
+        #btn-left     { top: 44px; left: 0; }
+        #btn-right    { top: 44px; right: 84px; }
+        #btn-backward { bottom: 0; left: 42px; }
+        
+        #btn-up       { top: 0; right: 0; }
+        #btn-down     { bottom: 0; right: 0; }
+
+        /* ツールバー */
         #toolbar {
             position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
             display: flex; gap: 8px; background: rgba(0, 0, 0, 0.4); padding: 8px; border-radius: 8px; z-index: 10;
@@ -34,35 +71,60 @@
         }
         .block-btn {
             padding: 8px 12px; font-size: 14px; font-weight: bold; flex-shrink: 0;
-            border: 2px solid #fff; border-radius: 50px; background: #555; color: #fff; outline: none;
+            border: 2px solid #fff; border-radius: 5px; background: #555; color: #fff; outline: none;
         }
-        .block-btn.active { background: #fff; color: #000; border-color: #ffcc00; }
+        .block-btn.active { background: #fff; color: #000; border-color: #ffcc00; box-shadow: 0 0 8px #ffcc00; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/simplex-noise@2.4.0/simplex-noise.min.js"></script>
 </head>
 <body>
 
-    <div id="dpad">
-        <button class="pad-btn" id="btn-forward">前</button>
-        <button class="pad-btn" id="btn-left">左</button>
-        <button class="pad-btn" id="btn-right">右</button>
-        <button class="pad-btn" id="btn-backward">後</button>
+    <div id="title-screen">
+        <div class="game-title">HTML CRAFT</div>
+        <div class="mode-desc">好きなモードを選んでください</div>
+        <button class="menu-btn" onclick="startGame('survival')">サバイバル<br><span style="font-size:12px; font-weight:normal;">(重力あり・徒歩移動)</span></button>
+        <button class="menu-btn" onclick="startGame('creative')">クリエイティブ<br><span style="font-size:12px; font-weight:normal;">(空を飛べる・建築用)</span></button>
     </div>
 
-    <div id="toolbar">
-        <button class="block-btn" onclick="selectBlock('dirt', this)">土</button>
-        <button class="block-btn" onclick="selectBlock('stone', this)">石</button>
-        <button class="block-btn active" onclick="selectBlock('grass', this)">草</button>
-        <button class="block-btn" onclick="selectBlock('wood', this)">木</button>
-        <button class="block-btn" onclick="selectBlock('leaves', this)">葉</button>
+    <div id="game-ui">
+        <div id="dpad">
+            <button class="pad-btn" id="btn-forward">前</button>
+            <button class="pad-btn" id="btn-left">左</button>
+            <button class="pad-btn" id="btn-right">右</button>
+            <button class="pad-btn" id="btn-backward">後</button>
+        </div>
+        <div id="updown-pad">
+            <button class="pad-btn" id="btn-up">上</button>
+            <button class="pad-btn" id="btn-down">下</button>
+        </div>
+        <div id="toolbar">
+            <button class="block-btn" onclick="selectBlock('dirt', this)">土</button>
+            <button class="block-btn" onclick="selectBlock('stone', this)">石</button>
+            <button class="block-btn active" onclick="selectBlock('grass', this)">草</button>
+            <button class="block-btn" onclick="selectBlock('wood', this)">木</button>
+            <button class="block-btn" onclick="selectBlock('leaves', this)">葉</button>
+        </div>
     </div>
 
     <script>
+        // ゲーム状態の管理
+        let gameMode = 'none'; // 'survival' または 'creative'
+
+        function startGame(mode) {
+            gameMode = mode;
+            document.getElementById('title-screen').style.display = 'none';
+            document.getElementById('game-ui').style.display = 'block';
+            
+            // クリエイティブなら「上下」ボタンを表示
+            if (mode === 'creative') {
+                document.getElementById('updown-pad').style.display = 'block';
+            }
+        }
+
         // --- 1. 基本セットアップ ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x87ceeb); // スカイブルー
-
+        scene.background = new THREE.Color(0x87ceeb);
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.rotation.order = 'YXZ';
 
@@ -70,22 +132,72 @@
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        const light = new THREE.DirectionalLight(0xffffff, 1.2);
+        const light = new THREE.DirectionalLight(0xffffff, 1.0);
         light.position.set(10, 20, 10).normalize();
         scene.add(light);
-        scene.add(new THREE.AmbientLight(0x606060));
+        scene.add(new THREE.AmbientLight(0x808080));
 
-        // --- 2. ブロック素材の定義 ---
+        // --- 2. 🎨 ドット絵テクスチャの自動生成 ---
+        // プログラムで16x16のドット絵を描き、それを画像としてブロックに貼り付けます
+        function createTexture(type) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 16; canvas.height = 16;
+            const ctx = canvas.getContext('2d');
+
+            if (type === 'dirt') {
+                ctx.fillStyle = '#8b4513'; ctx.fillRect(0,0,16,16);
+                for(let i=0; i<40; i++){ ctx.fillStyle = Math.random()>0.5 ? '#65330e' : '#a0522d'; ctx.fillRect(Math.random()*16, Math.random()*16, 2, 2); }
+            } else if (type === 'grass_side') {
+                ctx.fillStyle = '#8b4513'; ctx.fillRect(0,0,16,16);
+                for(let i=0; i<40; i++){ ctx.fillStyle = Math.random()>0.5 ? '#65330e' : '#a0522d'; ctx.fillRect(Math.random()*16, Math.random()*16, 2, 2); }
+                ctx.fillStyle = '#556b2f'; ctx.fillRect(0,0,16,4); // 上部に草を垂らす
+                for(let i=0; i<16; i++){ if(Math.random()>0.5) ctx.fillRect(i,4,1,Math.random()*3); }
+            } else if (type === 'grass_top') {
+                ctx.fillStyle = '#556b2f'; ctx.fillRect(0,0,16,16);
+                for(let i=0; i<40; i++){ ctx.fillStyle = Math.random()>0.5 ? '#6b8e23' : '#3a4a1f'; ctx.fillRect(Math.random()*16, Math.random()*16, 2, 2); }
+            } else if (type === 'stone') {
+                ctx.fillStyle = '#808080'; ctx.fillRect(0,0,16,16);
+                for(let i=0; i<50; i++){ ctx.fillStyle = Math.random()>0.5 ? '#696969' : '#999999'; ctx.fillRect(Math.random()*16, Math.random()*16, 2, 2); }
+            } else if (type === 'wood_side') {
+                ctx.fillStyle = '#4a3018'; ctx.fillRect(0,0,16,16);
+                for(let i=0; i<16; i+=4){ ctx.fillStyle = '#2e1b0d'; ctx.fillRect(i,0,2,16); } // 縦の木目
+            } else if (type === 'wood_top') {
+                ctx.fillStyle = '#8b5a2b'; ctx.fillRect(0,0,16,16);
+                ctx.beginPath(); ctx.arc(8,8,6,0,Math.PI*2); ctx.strokeStyle='#4a3018'; ctx.stroke(); // 年輪
+                ctx.beginPath(); ctx.arc(8,8,3,0,Math.PI*2); ctx.stroke();
+            } else if (type === 'leaves') {
+                ctx.fillStyle = '#228b22'; ctx.fillRect(0,0,16,16);
+                for(let i=0; i<60; i++){ ctx.fillStyle = Math.random()>0.5 ? '#006400' : '#32cd32'; ctx.fillRect(Math.random()*16, Math.random()*16, 2, 2); }
+            }
+
+            const tex = new THREE.CanvasTexture(canvas);
+            // NearestFilterにすることで、ぼやけず「くっきりしたドット絵（マイクラ風）」になります
+            tex.magFilter = THREE.NearestFilter;
+            tex.minFilter = THREE.NearestFilter;
+            return tex;
+        }
+
         const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const blockMaterials = {
-            dirt: new THREE.MeshLambertMaterial({ color: 0x8b4513 }),  // 茶色
-            stone: new THREE.MeshLambertMaterial({ color: 0x808080 }), // 灰色
-            grass: new THREE.MeshLambertMaterial({ color: 0x556b2f }), // 緑（草）
-            wood: new THREE.MeshLambertMaterial({ color: 0x5c4033 }),  // 濃い茶色（原木）
-            leaves: new THREE.MeshLambertMaterial({ color: 0x228b22 }) // 鮮やかな緑（葉っぱ）
-        };
-        let currentBlockType = 'grass';
+        
+        // 各面（右, 左, 上, 下, 前, 後）のテクスチャを割り当てる
+        const matDirt = new THREE.MeshLambertMaterial({ map: createTexture('dirt') });
+        const matGrassSide = new THREE.MeshLambertMaterial({ map: createTexture('grass_side') });
+        const matGrassTop = new THREE.MeshLambertMaterial({ map: createTexture('grass_top') });
+        const matStone = new THREE.MeshLambertMaterial({ map: createTexture('stone') });
+        const matWoodSide = new THREE.MeshLambertMaterial({ map: createTexture('wood_side') });
+        const matWoodTop = new THREE.MeshLambertMaterial({ map: createTexture('wood_top') });
+        const matLeaves = new THREE.MeshLambertMaterial({ map: createTexture('leaves') });
 
+        // ブロックデータ。草と木は「上面・下面・側面」で違う画像を使います
+        const blockMaterials = {
+            dirt: matDirt,
+            stone: matStone,
+            grass: [matGrassSide, matGrassSide, matGrassTop, matDirt, matGrassSide, matGrassSide],
+            wood: [matWoodSide, matWoodSide, matWoodTop, matWoodTop, matWoodSide, matWoodSide],
+            leaves: matLeaves
+        };
+
+        let currentBlockType = 'grass';
         const worldBlocks = {};
 
         function addBlockToWorld(x, y, z, material) {
@@ -95,27 +207,19 @@
             worldBlocks[`${x},${y},${z}`] = true;
         }
 
-        // --- 3. 🌲 広大な地形と木の生成 ---
+        // --- 3. 地形生成 ---
         const simplex = new SimplexNoise();
-        const worldSize = 15; // 31×31の広さ（iPadが重くならない程度の広さ）
+        const worldSize = 15;
 
         for (let x = -worldSize; x <= worldSize; x++) {
             for (let z = -worldSize; z <= worldSize; z++) {
-                
-                // ノイズを使って地形の高低差（山と谷）を作る
                 let height = Math.floor(simplex.noise2D(x / 12, z / 12) * 4);
-
-                // 表面に草、その下に土を配置
                 addBlockToWorld(x, height, z, blockMaterials.grass);
                 addBlockToWorld(x, height - 1, z, blockMaterials.dirt);
 
-                // 約3%の確率で「木」を生やす（プレイヤーのスタート位置には生やさない）
+                // 木の生成
                 if (Math.random() < 0.03 && (x !== 0 || z !== 0)) {
-                    // 幹（高さ3）
-                    for (let ty = 1; ty <= 3; ty++) {
-                        addBlockToWorld(x, height + ty, z, blockMaterials.wood);
-                    }
-                    // 葉っぱ（木の上のほうに3x3の塊を置く）
+                    for (let ty = 1; ty <= 3; ty++) addBlockToWorld(x, height + ty, z, blockMaterials.wood);
                     for (let lx = -1; lx <= 1; lx++) {
                         for (let lz = -1; lz <= 1; lz++) {
                             addBlockToWorld(x + lx, height + 3, z + lz, blockMaterials.leaves);
@@ -126,7 +230,6 @@
             }
         }
 
-        // 初期スポーン位置（プレイヤーが地形の中に埋まらないように、(0,0)の地形の高さに合わせる）
         let startHeight = Math.floor(simplex.noise2D(0, 0) * 4);
         camera.position.set(0, startHeight + 2, 0);
 
@@ -136,20 +239,17 @@
             buttonElement.classList.add('active');
         }
 
-        // UIタップ時の貫通防止
         document.getElementById('toolbar').addEventListener('touchstart', (e) => e.stopPropagation());
         document.getElementById('dpad').addEventListener('touchstart', (e) => e.stopPropagation());
+        document.getElementById('updown-pad').addEventListener('touchstart', (e) => e.stopPropagation());
 
         // --- 4. 当たり判定 ---
         function checkCollision(nextX, nextY, nextZ) {
-            const radius = 0.2; // 狭い隙間も通りやすくするため少し細めに
+            const radius = 0.2;
             const checkPoints = [
-                { x: nextX - radius, z: nextZ - radius },
-                { x: nextX + radius, z: nextZ - radius },
-                { x: nextX - radius, z: nextZ + radius },
-                { x: nextX + radius, z: nextZ + radius }
+                { x: nextX - radius, z: nextZ - radius }, { x: nextX + radius, z: nextZ - radius },
+                { x: nextX - radius, z: nextZ + radius }, { x: nextX + radius, z: nextZ + radius }
             ];
-            // 足元と頭の高さをチェック
             const checkY = [Math.floor(nextY - 1), Math.floor(nextY)];
 
             for (let pt of checkPoints) {
@@ -162,12 +262,13 @@
             return false;
         }
 
-        // --- 5. タッチ操作（視点変更・ブロック設置） ---
+        // --- 5. タッチ操作 ---
         let isTouching = false;
         let prevTouchX = 0, prevTouchY = 0, isMoved = false;
 
         window.addEventListener('gesturestart', (e) => e.preventDefault());
         window.addEventListener('touchstart', (e) => {
+            if (gameMode === 'none') return;
             if(e.target.tagName !== 'BUTTON') e.preventDefault();
             isTouching = true;
             prevTouchX = e.touches[0].clientX;
@@ -176,7 +277,7 @@
         }, { passive: false });
 
         window.addEventListener('touchmove', (e) => {
-            if (!isTouching) return;
+            if (gameMode === 'none' || !isTouching) return;
             e.preventDefault();
             const deltaX = e.touches[0].clientX - prevTouchX;
             const deltaY = e.touches[0].clientY - prevTouchY;
@@ -194,6 +295,7 @@
         const mouse = new THREE.Vector2();
 
         window.addEventListener('touchend', (e) => {
+            if (gameMode === 'none') return;
             isTouching = false;
             if (!isMoved && e.changedTouches.length > 0) {
                 const touch = e.changedTouches[0];
@@ -212,77 +314,82 @@
                     const by = Math.floor(targetPos.y + 0.5);
                     const bz = Math.floor(targetPos.z + 0.5);
 
-                    // プレイヤーの体と重なる位置には置けない
                     const pbx = Math.floor(camera.position.x + 0.5);
                     const pbz = Math.floor(camera.position.z + 0.5);
-                    if (bx === pbx && bz === pbz && (by === Math.floor(camera.position.y - 1) || by === Math.floor(camera.position.y))) {
-                        return;
-                    }
+                    if (bx === pbx && bz === pbz && (by === Math.floor(camera.position.y - 1) || by === Math.floor(camera.position.y))) return;
+
                     addBlockToWorld(bx, by, bz, blockMaterials[currentBlockType]);
                 }
             }
         });
 
-        // --- 6. 十字キー設定 ---
-        const moveFlags = { forward: false, backward: false, left: false, right: false };
+        // --- 6. コントローラー設定 ---
+        const moveFlags = { forward: false, backward: false, left: false, right: false, up: false, down: false };
         function setupGridButton(id, flagName) {
             const btn = document.getElementById(id);
+            if(!btn) return;
             btn.addEventListener('touchstart', (e) => { moveFlags[flagName] = true; e.preventDefault(); e.stopPropagation(); }, { passive: false });
             btn.addEventListener('touchend', (e) => { moveFlags[flagName] = false; e.stopPropagation(); });
         }
-        setupGridButton('btn-forward', 'forward');
-        setupGridButton('btn-backward', 'backward');
-        setupGridButton('btn-left', 'left');
-        setupGridButton('btn-right', 'right');
+        setupGridButton('btn-forward', 'forward'); setupGridButton('btn-backward', 'backward');
+        setupGridButton('btn-left', 'left'); setupGridButton('btn-right', 'right');
+        setupGridButton('btn-up', 'up'); setupGridButton('btn-down', 'down');
 
-        // --- 7. ゲームループ（重力とオートステップ付き） ---
+        // --- 7. ゲームループ ---
         const moveSpeed = 0.08;
+        const flySpeed = 0.15;
         const frontVec = new THREE.Vector3();
         const sideVec = new THREE.Vector3();
         const moveVec = new THREE.Vector3();
 
         function animate() {
             requestAnimationFrame(animate);
-            moveVec.set(0, 0, 0);
 
-            camera.getWorldDirection(frontVec);
-            frontVec.y = 0; frontVec.normalize();
-            sideVec.copy(frontVec).applyAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
-
-            if (moveFlags.forward)  moveVec.add(frontVec);
-            if (moveFlags.backward) moveVec.addScaledVector(frontVec, -1);
-            if (moveFlags.left)     moveVec.addScaledVector(sideVec, -1);
-            if (moveFlags.right)    moveVec.add(sideVec);
-
-            if (moveVec.lengthSq() > 0) {
-                moveVec.normalize().multiplyScalar(moveSpeed);
-
-                // X軸の移動と段差登り
-                let targetX = camera.position.x + moveVec.x;
-                if (!checkCollision(targetX, camera.position.y, camera.position.z)) {
-                    camera.position.x = targetX;
-                } else if (!checkCollision(targetX, camera.position.y + 1, camera.position.z)) {
-                    // 前にブロックがあるが、1段上なら進める場合（オートステップ）
-                    camera.position.x = targetX;
-                    camera.position.y += 1;
-                }
-
-                // Z軸の移動と段差登り
-                let targetZ = camera.position.z + moveVec.z;
-                if (!checkCollision(camera.position.x, camera.position.y, targetZ)) {
-                    camera.position.z = targetZ;
-                } else if (!checkCollision(camera.position.x, camera.position.y + 1, targetZ)) {
-                    camera.position.z = targetZ;
-                    camera.position.y += 1;
-                }
-            }
-
-            // 重力：足元にブロックがなければ落ちる
-            if (!checkCollision(camera.position.x, camera.position.y - 0.1, camera.position.z)) {
-                camera.position.y -= 0.1;
+            if (gameMode === 'none') {
+                camera.rotation.y += 0.002;
             } else {
-                // 地面に着いているときは高さをピタッと合わせる（ガタガタ防止）
-                camera.position.y = Math.ceil(camera.position.y - 0.1);
+                moveVec.set(0, 0, 0);
+                camera.getWorldDirection(frontVec);
+                frontVec.y = 0; frontVec.normalize();
+                sideVec.copy(frontVec).applyAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
+
+                if (moveFlags.forward)  moveVec.add(frontVec);
+                if (moveFlags.backward) moveVec.addScaledVector(frontVec, -1);
+                if (moveFlags.left)     moveVec.addScaledVector(sideVec, -1);
+                if (moveFlags.right)    moveVec.add(sideVec);
+
+                if (moveVec.lengthSq() > 0) {
+                    moveVec.normalize().multiplyScalar(moveSpeed);
+
+                    // クリエイティブモードなら壁抜け（当たり判定なし）で高速移動も可能にできるが、今回は「壁はすり抜けない」設定
+                    let targetX = camera.position.x + moveVec.x;
+                    if (!checkCollision(targetX, camera.position.y, camera.position.z)) {
+                        camera.position.x = targetX;
+                    } else if (!checkCollision(targetX, camera.position.y + 1, camera.position.z)) {
+                        camera.position.x = targetX; camera.position.y += 1;
+                    }
+
+                    let targetZ = camera.position.z + moveVec.z;
+                    if (!checkCollision(camera.position.x, camera.position.y, targetZ)) {
+                        camera.position.z = targetZ;
+                    } else if (!checkCollision(camera.position.x, camera.position.y + 1, targetZ)) {
+                        camera.position.z = targetZ; camera.position.y += 1;
+                    }
+                }
+
+                // 🌟 モード別：重力と飛行の処理
+                if (gameMode === 'creative') {
+                    // クリエイティブ：重力なし、上下ボタンで移動
+                    if (moveFlags.up) camera.position.y += flySpeed;
+                    if (moveFlags.down) camera.position.y -= flySpeed;
+                } else if (gameMode === 'survival') {
+                    // サバイバル：重力あり
+                    if (!checkCollision(camera.position.x, camera.position.y - 0.1, camera.position.z)) {
+                        camera.position.y -= 0.1;
+                    } else {
+                        camera.position.y = Math.ceil(camera.position.y - 0.1);
+                    }
+                }
             }
 
             renderer.render(scene, camera);
