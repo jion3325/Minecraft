@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>iPad Craft - Textures & Modes</title>
+    <title>iPad Craft - Fixed Controls & Jump</title>
     <style>
         html, body {
             margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%;
@@ -12,9 +12,6 @@
         }
         canvas { display: block; }
 
-        /* =========================================
-           タイトル画面
-        ========================================= */
         #title-screen {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0, 0, 0, 0.6); display: flex; flex-direction: column; 
@@ -28,42 +25,37 @@
         .menu-btn {
             width: 280px; padding: 15px; margin-bottom: 15px;
             background: #555; border: 3px solid #000; border-top-color: #aaa; border-left-color: #aaa;
-            color: #fff; font-size: 18px; font-weight: bold; text-align: center;
-            outline: none; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            color: #fff; font-size: 18px; font-weight: bold; text-align: center; outline: none;
         }
         .menu-btn:active {
             background: #444; border-bottom-color: #aaa; border-right-color: #aaa; border-top-color: #000; border-left-color: #000;
         }
 
-        /* =========================================
-           ゲームプレイUI
-        ========================================= */
         #game-ui { display: none; }
 
-        /* 左下：前後左右 */
+        /* 🌟 修正ポイント：十字キーの配置をピクセル単位で正確に計算 */
         #dpad {
-            position: absolute; bottom: 30px; left: 30px; width: 130px; height: 130px; z-index: 10;
+            position: absolute; bottom: 30px; left: 30px; width: 150px; height: 150px; z-index: 10;
         }
-        /* 右下：上昇下降（クリエイティブ用） */
-        #updown-pad {
-            position: absolute; bottom: 30px; right: 30px; width: 50px; height: 100px; z-index: 10;
-            display: none; /* 初期状態は非表示 */
-        }
-        
         .pad-btn {
-            position: absolute; width: 45px; height: 45px;
+            position: absolute; width: 50px; height: 50px;
             background: rgba(255, 255, 255, 0.7); border: 2px solid #333;
             border-radius: 8px; font-size: 14px; font-weight: bold; color: #000; outline: none;
         }
-        #btn-forward  { top: 0; left: 42px; }
-        #btn-left     { top: 44px; left: 0; }
-        #btn-right    { top: 44px; right: 84px; }
-        #btn-backward { bottom: 0; left: 42px; }
-        
-        #btn-up       { top: 0; right: 0; }
-        #btn-down     { bottom: 0; right: 0; }
+        #btn-forward  { top: 0; left: 50px; }
+        #btn-left     { top: 50px; left: 0; }
+        #btn-right    { top: 50px; left: 100px; } /* ←ここがバグの原因でした！ */
+        #btn-backward { top: 100px; left: 50px; }
 
-        /* ツールバー */
+        /* 右下のアクションボタン（ジャンプ または 上下） */
+        #action-pad {
+            position: absolute; bottom: 30px; right: 30px; width: 60px; height: 120px; z-index: 10;
+        }
+        #btn-up       { top: 0; right: 0; width: 60px; }
+        #btn-down     { bottom: 0; right: 0; width: 60px; }
+        /* ジャンプボタンは丸くして押しやすく */
+        #btn-jump     { bottom: 0; right: 0; width: 70px; height: 70px; border-radius: 50%; font-size: 18px; }
+
         #toolbar {
             position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
             display: flex; gap: 8px; background: rgba(0, 0, 0, 0.4); padding: 8px; border-radius: 8px; z-index: 10;
@@ -83,7 +75,7 @@
     <div id="title-screen">
         <div class="game-title">HTML CRAFT</div>
         <div class="mode-desc">好きなモードを選んでください</div>
-        <button class="menu-btn" onclick="startGame('survival')">サバイバル<br><span style="font-size:12px; font-weight:normal;">(重力あり・徒歩移動)</span></button>
+        <button class="menu-btn" onclick="startGame('survival')">サバイバル<br><span style="font-size:12px; font-weight:normal;">(重力あり・ジャンプ可能)</span></button>
         <button class="menu-btn" onclick="startGame('creative')">クリエイティブ<br><span style="font-size:12px; font-weight:normal;">(空を飛べる・建築用)</span></button>
     </div>
 
@@ -94,9 +86,10 @@
             <button class="pad-btn" id="btn-right">右</button>
             <button class="pad-btn" id="btn-backward">後</button>
         </div>
-        <div id="updown-pad">
-            <button class="pad-btn" id="btn-up">上</button>
-            <button class="pad-btn" id="btn-down">下</button>
+        <div id="action-pad">
+            <button class="pad-btn" id="btn-up" style="display:none;">上昇</button>
+            <button class="pad-btn" id="btn-down" style="display:none;">下降</button>
+            <button class="pad-btn" id="btn-jump" style="display:none;">跳</button>
         </div>
         <div id="toolbar">
             <button class="block-btn" onclick="selectBlock('dirt', this)">土</button>
@@ -108,21 +101,25 @@
     </div>
 
     <script>
-        // ゲーム状態の管理
-        let gameMode = 'none'; // 'survival' または 'creative'
+        let gameMode = 'none';
 
         function startGame(mode) {
             gameMode = mode;
             document.getElementById('title-screen').style.display = 'none';
             document.getElementById('game-ui').style.display = 'block';
             
-            // クリエイティブなら「上下」ボタンを表示
+            // 🌟 モードによって表示するボタンを切り替える
             if (mode === 'creative') {
-                document.getElementById('updown-pad').style.display = 'block';
+                document.getElementById('btn-up').style.display = 'block';
+                document.getElementById('btn-down').style.display = 'block';
+                document.getElementById('btn-jump').style.display = 'none';
+            } else {
+                document.getElementById('btn-up').style.display = 'none';
+                document.getElementById('btn-down').style.display = 'none';
+                document.getElementById('btn-jump').style.display = 'block';
             }
         }
 
-        // --- 1. 基本セットアップ ---
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87ceeb);
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -137,8 +134,7 @@
         scene.add(light);
         scene.add(new THREE.AmbientLight(0x808080));
 
-        // --- 2. 🎨 ドット絵テクスチャの自動生成 ---
-        // プログラムで16x16のドット絵を描き、それを画像としてブロックに貼り付けます
+        // テクスチャ生成
         function createTexture(type) {
             const canvas = document.createElement('canvas');
             canvas.width = 16; canvas.height = 16;
@@ -150,7 +146,7 @@
             } else if (type === 'grass_side') {
                 ctx.fillStyle = '#8b4513'; ctx.fillRect(0,0,16,16);
                 for(let i=0; i<40; i++){ ctx.fillStyle = Math.random()>0.5 ? '#65330e' : '#a0522d'; ctx.fillRect(Math.random()*16, Math.random()*16, 2, 2); }
-                ctx.fillStyle = '#556b2f'; ctx.fillRect(0,0,16,4); // 上部に草を垂らす
+                ctx.fillStyle = '#556b2f'; ctx.fillRect(0,0,16,4);
                 for(let i=0; i<16; i++){ if(Math.random()>0.5) ctx.fillRect(i,4,1,Math.random()*3); }
             } else if (type === 'grass_top') {
                 ctx.fillStyle = '#556b2f'; ctx.fillRect(0,0,16,16);
@@ -160,41 +156,41 @@
                 for(let i=0; i<50; i++){ ctx.fillStyle = Math.random()>0.5 ? '#696969' : '#999999'; ctx.fillRect(Math.random()*16, Math.random()*16, 2, 2); }
             } else if (type === 'wood_side') {
                 ctx.fillStyle = '#4a3018'; ctx.fillRect(0,0,16,16);
-                for(let i=0; i<16; i+=4){ ctx.fillStyle = '#2e1b0d'; ctx.fillRect(i,0,2,16); } // 縦の木目
+                for(let i=0; i<16; i+=4){ ctx.fillStyle = '#2e1b0d'; ctx.fillRect(i,0,2,16); }
             } else if (type === 'wood_top') {
                 ctx.fillStyle = '#8b5a2b'; ctx.fillRect(0,0,16,16);
-                ctx.beginPath(); ctx.arc(8,8,6,0,Math.PI*2); ctx.strokeStyle='#4a3018'; ctx.stroke(); // 年輪
+                ctx.beginPath(); ctx.arc(8,8,6,0,Math.PI*2); ctx.strokeStyle='#4a3018'; ctx.stroke();
                 ctx.beginPath(); ctx.arc(8,8,3,0,Math.PI*2); ctx.stroke();
             } else if (type === 'leaves') {
                 ctx.fillStyle = '#228b22'; ctx.fillRect(0,0,16,16);
                 for(let i=0; i<60; i++){ ctx.fillStyle = Math.random()>0.5 ? '#006400' : '#32cd32'; ctx.fillRect(Math.random()*16, Math.random()*16, 2, 2); }
             }
-
             const tex = new THREE.CanvasTexture(canvas);
-            // NearestFilterにすることで、ぼやけず「くっきりしたドット絵（マイクラ風）」になります
-            tex.magFilter = THREE.NearestFilter;
-            tex.minFilter = THREE.NearestFilter;
+            tex.magFilter = THREE.NearestFilter; tex.minFilter = THREE.NearestFilter;
             return tex;
         }
 
         const geometry = new THREE.BoxGeometry(1, 1, 1);
-        
-        // 各面（右, 左, 上, 下, 前, 後）のテクスチャを割り当てる
-        const matDirt = new THREE.MeshLambertMaterial({ map: createTexture('dirt') });
-        const matGrassSide = new THREE.MeshLambertMaterial({ map: createTexture('grass_side') });
-        const matGrassTop = new THREE.MeshLambertMaterial({ map: createTexture('grass_top') });
-        const matStone = new THREE.MeshLambertMaterial({ map: createTexture('stone') });
-        const matWoodSide = new THREE.MeshLambertMaterial({ map: createTexture('wood_side') });
-        const matWoodTop = new THREE.MeshLambertMaterial({ map: createTexture('wood_top') });
-        const matLeaves = new THREE.MeshLambertMaterial({ map: createTexture('leaves') });
-
-        // ブロックデータ。草と木は「上面・下面・側面」で違う画像を使います
         const blockMaterials = {
-            dirt: matDirt,
-            stone: matStone,
-            grass: [matGrassSide, matGrassSide, matGrassTop, matDirt, matGrassSide, matGrassSide],
-            wood: [matWoodSide, matWoodSide, matWoodTop, matWoodTop, matWoodSide, matWoodSide],
-            leaves: matLeaves
+            dirt: new THREE.MeshLambertMaterial({ map: createTexture('dirt') }),
+            stone: new THREE.MeshLambertMaterial({ map: createTexture('stone') }),
+            grass: [
+                new THREE.MeshLambertMaterial({ map: createTexture('grass_side') }),
+                new THREE.MeshLambertMaterial({ map: createTexture('grass_side') }),
+                new THREE.MeshLambertMaterial({ map: createTexture('grass_top') }),
+                new THREE.MeshLambertMaterial({ map: createTexture('dirt') }),
+                new THREE.MeshLambertMaterial({ map: createTexture('grass_side') }),
+                new THREE.MeshLambertMaterial({ map: createTexture('grass_side') })
+            ],
+            wood: [
+                new THREE.MeshLambertMaterial({ map: createTexture('wood_side') }),
+                new THREE.MeshLambertMaterial({ map: createTexture('wood_side') }),
+                new THREE.MeshLambertMaterial({ map: createTexture('wood_top') }),
+                new THREE.MeshLambertMaterial({ map: createTexture('wood_top') }),
+                new THREE.MeshLambertMaterial({ map: createTexture('wood_side') }),
+                new THREE.MeshLambertMaterial({ map: createTexture('wood_side') })
+            ],
+            leaves: new THREE.MeshLambertMaterial({ map: createTexture('leaves') })
         };
 
         let currentBlockType = 'grass';
@@ -207,7 +203,6 @@
             worldBlocks[`${x},${y},${z}`] = true;
         }
 
-        // --- 3. 地形生成 ---
         const simplex = new SimplexNoise();
         const worldSize = 15;
 
@@ -217,7 +212,6 @@
                 addBlockToWorld(x, height, z, blockMaterials.grass);
                 addBlockToWorld(x, height - 1, z, blockMaterials.dirt);
 
-                // 木の生成
                 if (Math.random() < 0.03 && (x !== 0 || z !== 0)) {
                     for (let ty = 1; ty <= 3; ty++) addBlockToWorld(x, height + ty, z, blockMaterials.wood);
                     for (let lx = -1; lx <= 1; lx++) {
@@ -241,9 +235,8 @@
 
         document.getElementById('toolbar').addEventListener('touchstart', (e) => e.stopPropagation());
         document.getElementById('dpad').addEventListener('touchstart', (e) => e.stopPropagation());
-        document.getElementById('updown-pad').addEventListener('touchstart', (e) => e.stopPropagation());
+        document.getElementById('action-pad').addEventListener('touchstart', (e) => e.stopPropagation());
 
-        // --- 4. 当たり判定 ---
         function checkCollision(nextX, nextY, nextZ) {
             const radius = 0.2;
             const checkPoints = [
@@ -262,7 +255,6 @@
             return false;
         }
 
-        // --- 5. タッチ操作 ---
         let isTouching = false;
         let prevTouchX = 0, prevTouchY = 0, isMoved = false;
 
@@ -323,8 +315,8 @@
             }
         });
 
-        // --- 6. コントローラー設定 ---
-        const moveFlags = { forward: false, backward: false, left: false, right: false, up: false, down: false };
+        // 🌟 コントローラー設定
+        const moveFlags = { forward: false, backward: false, left: false, right: false, up: false, down: false, jump: false };
         function setupGridButton(id, flagName) {
             const btn = document.getElementById(id);
             if(!btn) return;
@@ -334,13 +326,17 @@
         setupGridButton('btn-forward', 'forward'); setupGridButton('btn-backward', 'backward');
         setupGridButton('btn-left', 'left'); setupGridButton('btn-right', 'right');
         setupGridButton('btn-up', 'up'); setupGridButton('btn-down', 'down');
+        setupGridButton('btn-jump', 'jump');
 
-        // --- 7. ゲームループ ---
         const moveSpeed = 0.08;
         const flySpeed = 0.15;
         const frontVec = new THREE.Vector3();
         const sideVec = new THREE.Vector3();
         const moveVec = new THREE.Vector3();
+
+        // 🌟 ジャンプ用の物理演算変数
+        let velocityY = 0;
+        let isGrounded = false;
 
         function animate() {
             requestAnimationFrame(animate);
@@ -361,7 +357,6 @@
                 if (moveVec.lengthSq() > 0) {
                     moveVec.normalize().multiplyScalar(moveSpeed);
 
-                    // クリエイティブモードなら壁抜け（当たり判定なし）で高速移動も可能にできるが、今回は「壁はすり抜けない」設定
                     let targetX = camera.position.x + moveVec.x;
                     if (!checkCollision(targetX, camera.position.y, camera.position.z)) {
                         camera.position.x = targetX;
@@ -377,17 +372,39 @@
                     }
                 }
 
-                // 🌟 モード別：重力と飛行の処理
+                // 🌟 モード別の高さ移動・ジャンプ処理
                 if (gameMode === 'creative') {
-                    // クリエイティブ：重力なし、上下ボタンで移動
                     if (moveFlags.up) camera.position.y += flySpeed;
                     if (moveFlags.down) camera.position.y -= flySpeed;
                 } else if (gameMode === 'survival') {
-                    // サバイバル：重力あり
-                    if (!checkCollision(camera.position.x, camera.position.y - 0.1, camera.position.z)) {
-                        camera.position.y -= 0.1;
+                    // サバイバル：重力とジャンプの物理演算
+                    velocityY -= 0.015; // 常に下へ引っ張る力（重力）
+                    let targetY = camera.position.y + velocityY;
+
+                    if (velocityY < 0) {
+                        // 落下中の足元判定
+                        if (!checkCollision(camera.position.x, targetY, camera.position.z)) {
+                            camera.position.y = targetY;
+                            isGrounded = false;
+                        } else {
+                            camera.position.y = Math.ceil(camera.position.y - 0.1); // ピタッと着地
+                            velocityY = 0;
+                            isGrounded = true;
+                        }
                     } else {
-                        camera.position.y = Math.ceil(camera.position.y - 0.1);
+                        // 上昇中（ジャンプ中）の頭上判定
+                        if (!checkCollision(camera.position.x, targetY + 0.2, camera.position.z)) {
+                            camera.position.y = targetY;
+                        } else {
+                            velocityY = 0; // 頭をぶつけたら落下開始
+                        }
+                        isGrounded = false;
+                    }
+
+                    // ジャンプボタンが押されていて、かつ地面に足がついている時だけジャンプできる
+                    if (moveFlags.jump && isGrounded) {
+                        velocityY = 0.25; // ジャンプの初速
+                        isGrounded = false;
                     }
                 }
             }
