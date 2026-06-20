@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>iPad Craft - Collision Edition</title>
+    <title>iPad Craft - World Generation</title>
     <style>
         html, body {
             margin: 0; padding: 0; overflow: hidden; width: 100%; height: 100%;
@@ -11,7 +11,7 @@
         }
         canvas { display: block; }
 
-        /* 十字キー（移動コントローラー）の配置 */
+        /* 十字キー */
         #dpad {
             position: absolute; bottom: 30px; left: 30px;
             width: 130px; height: 130px; z-index: 10;
@@ -26,18 +26,20 @@
         #btn-right    { top: 44px; right: 0; }
         #btn-backward { bottom: 0; left: 44px; }
 
-        /* ツールバー */
+        /* ツールバー（ブロックの種類が増えたので横スクロール対応に） */
         #toolbar {
             position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-            display: flex; gap: 10px; background: rgba(0, 0, 0, 0.4); padding: 8px; border-radius: 8px; z-index: 10;
+            display: flex; gap: 8px; background: rgba(0, 0, 0, 0.4); padding: 8px; border-radius: 8px; z-index: 10;
+            max-width: 90vw; overflow-x: auto; white-space: nowrap;
         }
         .block-btn {
-            padding: 10px 15px; font-size: 14px; font-weight: bold;
+            padding: 8px 12px; font-size: 14px; font-weight: bold; flex-shrink: 0;
             border: 2px solid #fff; border-radius: 50px; background: #555; color: #fff; outline: none;
         }
         .block-btn.active { background: #fff; color: #000; border-color: #ffcc00; }
     </style>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/simplex-noise@2.4.0/simplex-noise.min.js"></script>
 </head>
 <body>
 
@@ -49,56 +51,84 @@
     </div>
 
     <div id="toolbar">
-        <button class="block-btn active" onclick="selectBlock('dirt', this)">土</button>
+        <button class="block-btn" onclick="selectBlock('dirt', this)">土</button>
         <button class="block-btn" onclick="selectBlock('stone', this)">石</button>
-        <button class="block-btn" onclick="selectBlock('gold', this)">金</button>
+        <button class="block-btn active" onclick="selectBlock('grass', this)">草</button>
+        <button class="block-btn" onclick="selectBlock('wood', this)">木</button>
+        <button class="block-btn" onclick="selectBlock('leaves', this)">葉</button>
     </div>
 
     <script>
         // --- 1. 基本セットアップ ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x87ceeb);
+        scene.background = new THREE.Color(0x87ceeb); // スカイブルー
 
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 2, 5); // プレイヤーの初期位置 (高さY=2)
         camera.rotation.order = 'YXZ';
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         document.body.appendChild(renderer.domElement);
 
-        const light = new THREE.DirectionalLight(0xffffff, 1);
-        light.position.set(5, 10, 7).normalize();
+        const light = new THREE.DirectionalLight(0xffffff, 1.2);
+        light.position.set(10, 20, 10).normalize();
         scene.add(light);
-        scene.add(new THREE.AmbientLight(0x505050));
+        scene.add(new THREE.AmbientLight(0x606060));
 
-        // --- 2. ブロックデータ管理と床の作成 ---
+        // --- 2. ブロック素材の定義 ---
         const geometry = new THREE.BoxGeometry(1, 1, 1);
-        const grassMaterial = new THREE.MeshLambertMaterial({ color: 0x556b2f });
         const blockMaterials = {
-            dirt: new THREE.MeshLambertMaterial({ color: 0x8b4513 }),
-            stone: new THREE.MeshLambertMaterial({ color: 0x808080 }),
-            gold: new THREE.MeshLambertMaterial({ color: 0xffd700 })
+            dirt: new THREE.MeshLambertMaterial({ color: 0x8b4513 }),  // 茶色
+            stone: new THREE.MeshLambertMaterial({ color: 0x808080 }), // 灰色
+            grass: new THREE.MeshLambertMaterial({ color: 0x556b2f }), // 緑（草）
+            wood: new THREE.MeshLambertMaterial({ color: 0x5c4033 }),  // 濃い茶色（原木）
+            leaves: new THREE.MeshLambertMaterial({ color: 0x228b22 }) // 鮮やかな緑（葉っぱ）
         };
-        let currentBlockType = 'dirt';
+        let currentBlockType = 'grass';
 
-        // ⭐ここに存在するブロックの座標を "X,Y,Z" の文字列をキーにして記録する
         const worldBlocks = {};
 
         function addBlockToWorld(x, y, z, material) {
             const cube = new THREE.Mesh(geometry, material);
             cube.position.set(x, y, z);
             scene.add(cube);
-            // 座標を記録 (例: "1,0,-2": true)
             worldBlocks[`${x},${y},${z}`] = true;
         }
 
-        // 初期床（5x5、高さ0）を設置してデータに登録
-        for (let x = -2; x <= 2; x++) {
-            for (let z = -2; z <= 2; z++) {
-                addBlockToWorld(x, 0, z, grassMaterial);
+        // --- 3. 🌲 広大な地形と木の生成 ---
+        const simplex = new SimplexNoise();
+        const worldSize = 15; // 31×31の広さ（iPadが重くならない程度の広さ）
+
+        for (let x = -worldSize; x <= worldSize; x++) {
+            for (let z = -worldSize; z <= worldSize; z++) {
+                
+                // ノイズを使って地形の高低差（山と谷）を作る
+                let height = Math.floor(simplex.noise2D(x / 12, z / 12) * 4);
+
+                // 表面に草、その下に土を配置
+                addBlockToWorld(x, height, z, blockMaterials.grass);
+                addBlockToWorld(x, height - 1, z, blockMaterials.dirt);
+
+                // 約3%の確率で「木」を生やす（プレイヤーのスタート位置には生やさない）
+                if (Math.random() < 0.03 && (x !== 0 || z !== 0)) {
+                    // 幹（高さ3）
+                    for (let ty = 1; ty <= 3; ty++) {
+                        addBlockToWorld(x, height + ty, z, blockMaterials.wood);
+                    }
+                    // 葉っぱ（木の上のほうに3x3の塊を置く）
+                    for (let lx = -1; lx <= 1; lx++) {
+                        for (let lz = -1; lz <= 1; lz++) {
+                            addBlockToWorld(x + lx, height + 3, z + lz, blockMaterials.leaves);
+                            addBlockToWorld(x + lx, height + 4, z + lz, blockMaterials.leaves);
+                        }
+                    }
+                }
             }
         }
+
+        // 初期スポーン位置（プレイヤーが地形の中に埋まらないように、(0,0)の地形の高さに合わせる）
+        let startHeight = Math.floor(simplex.noise2D(0, 0) * 4);
+        camera.position.set(0, startHeight + 2, 0);
 
         function selectBlock(type, buttonElement) {
             currentBlockType = type;
@@ -110,34 +140,29 @@
         document.getElementById('toolbar').addEventListener('touchstart', (e) => e.stopPropagation());
         document.getElementById('dpad').addEventListener('touchstart', (e) => e.stopPropagation());
 
-        // --- 3. 当たり判定（衝突チェック）の関数 ---
-        // プレイヤーの体（半径0.3の太さ）がブロックにめり込んでいないか調べる
+        // --- 4. 当たり判定 ---
         function checkCollision(nextX, nextY, nextZ) {
-            const radius = 0.3;
-            // プレイヤーの周囲4つの角の座標をチェック
+            const radius = 0.2; // 狭い隙間も通りやすくするため少し細めに
             const checkPoints = [
                 { x: nextX - radius, z: nextZ - radius },
                 { x: nextX + radius, z: nextZ - radius },
                 { x: nextX - radius, z: nextZ + radius },
                 { x: nextX + radius, z: nextZ + radius }
             ];
-            // プレイヤーの足元(Y=1)と、頭(Y=2)の高さにブロックがあるか調べる
+            // 足元と頭の高さをチェック
             const checkY = [Math.floor(nextY - 1), Math.floor(nextY)];
 
             for (let pt of checkPoints) {
                 const bx = Math.floor(pt.x + 0.5);
                 const bz = Math.floor(pt.z + 0.5);
                 for (let by of checkY) {
-                    // もしその座標にブロックが記録されていたら「衝突（true）」を返す
-                    if (worldBlocks[`${bx},${by},${bz}`]) {
-                        return true; 
-                    }
+                    if (worldBlocks[`${bx},${by},${bz}`]) return true; 
                 }
             }
-            return false; // ぶつかっていない
+            return false;
         }
 
-        // --- 4. タッチでの視点変更とブロック設置 ---
+        // --- 5. タッチ操作（視点変更・ブロック設置） ---
         let isTouching = false;
         let prevTouchX = 0, prevTouchY = 0, isMoved = false;
 
@@ -182,30 +207,24 @@
 
                 if (intersects.length > 0) {
                     const intersect = intersects[0];
-                    const selectedMaterial = blockMaterials[currentBlockType];
-
-                    // 設置予定の座標を計算
                     const targetPos = intersect.point.clone().add(intersect.face.normal.clone().multiplyScalar(0.5));
                     const bx = Math.floor(targetPos.x + 0.5);
                     const by = Math.floor(targetPos.y + 0.5);
                     const bz = Math.floor(targetPos.z + 0.5);
 
-                    // プレイヤーの体にめり込む位置には置けないようにする
+                    // プレイヤーの体と重なる位置には置けない
                     const pbx = Math.floor(camera.position.x + 0.5);
                     const pbz = Math.floor(camera.position.z + 0.5);
-                    if (bx === pbx && bz === pbz && (by === 1 || by === 2)) {
-                        return; // 置かせない
+                    if (bx === pbx && bz === pbz && (by === Math.floor(camera.position.y - 1) || by === Math.floor(camera.position.y))) {
+                        return;
                     }
-
-                    // 世界にブロックを追加
-                    addBlockToWorld(bx, by, bz, selectedMaterial);
+                    addBlockToWorld(bx, by, bz, blockMaterials[currentBlockType]);
                 }
             }
         });
 
-        // --- 5. 十字キーの移動フラグ設定 ---
+        // --- 6. 十字キー設定 ---
         const moveFlags = { forward: false, backward: false, left: false, right: false };
-
         function setupGridButton(id, flagName) {
             const btn = document.getElementById(id);
             btn.addEventListener('touchstart', (e) => { moveFlags[flagName] = true; e.preventDefault(); e.stopPropagation(); }, { passive: false });
@@ -216,27 +235,20 @@
         setupGridButton('btn-left', 'left');
         setupGridButton('btn-right', 'right');
 
-        // --- 6. ゲームループ（移動と当たり判定の連動） ---
-        const moveSpeed = 0.05;
+        // --- 7. ゲームループ（重力とオートステップ付き） ---
+        const moveSpeed = 0.08;
         const frontVec = new THREE.Vector3();
         const sideVec = new THREE.Vector3();
         const moveVec = new THREE.Vector3();
 
         function animate() {
             requestAnimationFrame(animate);
-
-            // 移動ベクトルのリセット
             moveVec.set(0, 0, 0);
 
-            // カメラの向いている方角をベースに「前進・後退」の向きを計算
             camera.getWorldDirection(frontVec);
-            frontVec.y = 0;
-            frontVec.normalize();
-
-            // 「左右」の向きは、前進ベクトルの直角方向
+            frontVec.y = 0; frontVec.normalize();
             sideVec.copy(frontVec).applyAxisAngle(new THREE.Vector3(0, 1, 0), -Math.PI / 2);
 
-            // 押されているボタンに応じて移動量を足し算する
             if (moveFlags.forward)  moveVec.add(frontVec);
             if (moveFlags.backward) moveVec.addScaledVector(frontVec, -1);
             if (moveFlags.left)     moveVec.addScaledVector(sideVec, -1);
@@ -245,18 +257,32 @@
             if (moveVec.lengthSq() > 0) {
                 moveVec.normalize().multiplyScalar(moveSpeed);
 
-                // 💡壁にぶつかった時に「滑る」ように動かすため、X軸とZ軸を別々に判定する
-                // まずはX方向だけ進めてみて、ぶつからなければ位置を確定
-                const targetX = camera.position.x + moveVec.x;
+                // X軸の移動と段差登り
+                let targetX = camera.position.x + moveVec.x;
                 if (!checkCollision(targetX, camera.position.y, camera.position.z)) {
                     camera.position.x = targetX;
+                } else if (!checkCollision(targetX, camera.position.y + 1, camera.position.z)) {
+                    // 前にブロックがあるが、1段上なら進める場合（オートステップ）
+                    camera.position.x = targetX;
+                    camera.position.y += 1;
                 }
-                
-                // 次にZ方向だけ進めてみて、ぶつからなければ位置を確定
-                const targetZ = camera.position.z + moveVec.z;
+
+                // Z軸の移動と段差登り
+                let targetZ = camera.position.z + moveVec.z;
                 if (!checkCollision(camera.position.x, camera.position.y, targetZ)) {
                     camera.position.z = targetZ;
+                } else if (!checkCollision(camera.position.x, camera.position.y + 1, targetZ)) {
+                    camera.position.z = targetZ;
+                    camera.position.y += 1;
                 }
+            }
+
+            // 重力：足元にブロックがなければ落ちる
+            if (!checkCollision(camera.position.x, camera.position.y - 0.1, camera.position.z)) {
+                camera.position.y -= 0.1;
+            } else {
+                // 地面に着いているときは高さをピタッと合わせる（ガタガタ防止）
+                camera.position.y = Math.ceil(camera.position.y - 0.1);
             }
 
             renderer.render(scene, camera);
